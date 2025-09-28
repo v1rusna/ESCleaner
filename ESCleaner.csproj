@@ -9,8 +9,9 @@
     <!-- Сборка в один exe -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
-    <PublishTrimmed>true</PublishTrimmed>
+    <PublishTrimmed>false</PublishTrimmed>
     <PublishReadyToRun>true</PublishReadyToRun>
+    <TrimMode>copyused</TrimMode>
 
     <!-- Указываем свою иконку -->
     <ApplicationIcon>icon.ico</ApplicationIcon>

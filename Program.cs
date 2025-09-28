@@ -4,6 +4,8 @@ using System.Text.Json.Serialization;
 
 namespace ESC
 {
+    public record Result(bool IsError, string[] Errors);
+
     internal class Settings
     {
         public string RenPyVersion { get; set; } = "7.4.11";
@@ -15,10 +17,10 @@ namespace ESC
         public bool RemoveFilters { get; set; }
 
         public IReadOnlyList<string> DeleteLanguages { get; init; } =
-        [
-            "chinese","english","french","german","italian",
-            "portuguese","spanish","turkish"
-        ];
+            [
+                "chinese","english","french","german","italian",
+                "portuguese","spanish","turkish"
+            ];
 
         public void Save(string file = "settings.json") =>
             JsonFileHelper.Write(file, this);
@@ -56,18 +58,28 @@ namespace ESC
 
     class Program
     {
+        static readonly public string ExeDir = AppContext.BaseDirectory;
+
         static void Main(string[] args)
         {
             Console.Clear();
             PrintInfo();
 
-            if (!FileSystem.IsExistsFiles())
+            Result result = FileSystem.IsExistsFiles();
+
+            if (result.IsError)
             {
-                Print("The necessary files are not present.", 1);
+                Print("The necessary files are not present:", 1);
+                foreach (var item in result.Errors)
+                {
+                    Print(item, 1);
+                }
+                Console.ReadKey(true);
                 return;
             }
 
-            Settings settings = JsonFileHelper.Read<Settings>("settings.json")
+            string settingsPath = Path.Combine(ExeDir, "settings.json");
+            Settings settings = JsonFileHelper.Read<Settings>(settingsPath)
                                 ?? new Settings();
 
             ParseArgs(args, settings);
@@ -76,6 +88,8 @@ namespace ESC
                 Print("Operation completed successfully.", 32);
             else
                 Print("Operation failed.", 31);
+
+            Console.ReadKey(true);
         }
 
         private static void ParseArgs(string[] args, Settings settings)
@@ -91,6 +105,7 @@ namespace ESC
                 else if (arg.Equals("-help", StringComparison.OrdinalIgnoreCase))
                 {
                     ShowHelp();
+                    Console.ReadKey(true);
                     Environment.Exit(0);
                 }
                 else if (arg.StartsWith("-fileOpt:", StringComparison.OrdinalIgnoreCase))
@@ -112,7 +127,7 @@ namespace ESC
                 {
                     Process.Start(new ProcessStartInfo
                     {
-                        FileName = "settings.json",
+                        FileName = Path.Combine(ExeDir, "settings.json"),
                         UseShellExecute = true
                     });
                     Print("Open settings file");
@@ -121,6 +136,7 @@ namespace ESC
                 else
                 {
                     Print($"Unknown argument: {arg}");
+                    Console.ReadKey(true);
                     Environment.Exit(1);
                 }
             }
@@ -135,7 +151,7 @@ namespace ESC
             if (bool.TryParse(flag, out bool imgOpt))
             {
                 settings.FileOptimize = imgOpt;
-                if (save) settings.Save();
+                if (save) settings.Save(Path.Combine(ExeDir, "settings.json"));
                 Print($"Image optimization set to {imgOpt}" + (save ? " and saved" : ""));
             }
             else
@@ -152,7 +168,7 @@ namespace ESC
             Print(" -fileOpt:true:save / -fileOpt:false:save    ...and save settings");
             Print(" -RenPy=<version>                            Set RenPy version");
             Print(" -nofilters                                  Removing filters");
-            Print(" -openSettings                               opens the settings file");
+            Print(" -openSettings                               Opens the settings file");
             Print(" -help                                       Show this help message");
         }
 
@@ -169,26 +185,51 @@ namespace ESC
             int width = Console.WindowWidth;
             Console.SetCursorPosition(width - "v1rus team".Length - 1, 0);
             Print("v1rus team", 165, "");
-            Console.SetCursorPosition(width - "27.09.2025".Length - 1, 1);
-            Print("27.09.2025", 87, "");
+            Console.SetCursorPosition(width - "28.09.2025".Length - 1, 1);
+            Print("28.09.2025", 87, "");
             Console.SetCursorPosition(0, 0);
         }
     }
 
     static class FileSystem
     {
-        public static bool IsExistsFiles()
+        public static Result IsExistsFiles()
         {
-            if (!File.Exists("settings.json")) return false;
-            if (!Directory.Exists("optimized")) return false;
-            if (!File.Exists(Path.Combine("optimized", "data.json"))) return false;
-            if (!File.Exists(Path.Combine("optimized", "optimize.rpy"))) return false;
+            static bool Exists(string path) => File.Exists(path) || Directory.Exists(path);
 
-            var filesMap = JsonFileHelper.Read<Dictionary<string, string>>(Path.Combine("optimized", "data.json"));
-            if (filesMap == null) return false;
+            List<string> errors = [];
+            string optimizedDir = Path.Combine(Program.ExeDir, "optimized");
 
-            return filesMap.All(file =>
-                File.Exists(Path.Combine("optimized", $"{file.Key}.optimize")));
+            string[] check = [
+                Path.Combine(Program.ExeDir, "settings.json"),
+                optimizedDir,
+                Path.Combine(optimizedDir, "data.json"),
+                Path.Combine(optimizedDir, "optimize.rpy")
+            ];
+
+            foreach (string item in check)
+            {
+                if (!Exists(item)) errors.Add(item);
+            }
+
+            var filesMap = JsonFileHelper.Read<Dictionary<string, string>>(Path.Combine(optimizedDir, "data.json"));
+            if (filesMap == null) errors.Add(Path.Combine(optimizedDir, "data.json"));
+
+            string[] files = [];
+            if (Directory.Exists(optimizedDir))
+                files = Directory.GetFiles(optimizedDir);
+
+            if (filesMap != null)
+            {
+                foreach (var item in filesMap)
+                {
+                    string expectedFile = Path.Combine(optimizedDir, item.Key + ".optimize");
+                    if (!files.Contains(expectedFile))
+                        errors.Add(expectedFile);
+                }
+            }
+
+            return new Result(errors.Count > 0, errors.ToArray());
         }
 
         public static void CheckPath(string path, Settings settings)
@@ -196,7 +237,7 @@ namespace ESC
             if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path) || !path.Contains("Everlasting Summer"))
                 throw new DirectoryNotFoundException($"Directory not found: {path}");
             settings.Path = path;
-            settings.Save();
+            settings.Save(Path.Combine(Program.ExeDir, "settings.json"));
         }
 
         public static bool Run(Settings settings)
@@ -218,24 +259,23 @@ namespace ESC
             string mainGamePath = Path.Combine(settings.Path, "game");
             CopyOptimizedFiles(mainGamePath);
 
-            var optimizePath = Path.Combine("optimized", "optimize.rpy");
+            string optimizePath = Path.Combine(Program.ExeDir, "optimized", "optimize.rpy");
             string[] lines = File.ReadAllLines(optimizePath);
             lines[1] = $"    $ persistent.nofilters = {(settings.RemoveFilters ? "True" : "False")}";
-            File.WriteAllLines(optimizePath, lines);
-
-            File.Copy(optimizePath, Path.Combine(mainGamePath, "optimize.rpy"), overwrite: true);
+            File.WriteAllLines(Path.Combine(mainGamePath, "optimize.rpy"), lines);
         }
 
         private static void CopyOptimizedFiles(string mainGamePath)
         {
-            var filesMap = JsonFileHelper.Read<Dictionary<string, string>>(Path.Combine("optimized", "data.json"));
+            string optimizedDir = Path.Combine(Program.ExeDir, "optimized");
+            var filesMap = JsonFileHelper.Read<Dictionary<string, string>>(Path.Combine(optimizedDir, "data.json"));
             if (filesMap == null) return;
 
             foreach (var kvp in filesMap)
             {
                 string fileName = kvp.Key;
                 string relativePath = Path.Combine(mainGamePath, kvp.Value);
-                string source = Path.Combine("optimized", fileName + ".optimize");
+                string source = Path.Combine(optimizedDir, fileName + ".optimize");
                 string dest = Path.Combine(relativePath, fileName);
 
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
