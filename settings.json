@@ -1,0 +1,15 @@
+{
+  "RenPyVersion": "7.4.11",
+  "Path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Everlasting Summer",
+  "FileOptimize": true,
+  "DeleteLanguages": [
+    "chinese",
+    "english",
+    "french",
+    "german",
+    "italian",
+    "portuguese",
+    "spanish",
+    "turkish"
+  ]
+}
